@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 )
@@ -34,13 +35,44 @@ func ListIAMUsers(sess *session.Session) ([]Resource, error) {
 }
 
 func (e *IAMUser) Remove() error {
-	_, err := e.svc.DeleteUser(&iam.DeleteUserInput{
+	err := e.RemoveAllSSHPublicKeys()
+	if err != nil {
+		return err
+	}
+
+	_, err = e.svc.DeleteUser(&iam.DeleteUserInput{
 		UserName: &e.name,
 	})
 	if err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func (e *IAMUser) RemoveAllSSHPublicKeys() error {
+	params := &iam.ListSSHPublicKeysInput{
+		UserName: aws.String(e.name),
+	}
+	var keys []*iam.SSHPublicKeyMetadata
+	err := e.svc.ListSSHPublicKeysPages(params,
+		func(page *iam.ListSSHPublicKeysOutput, lastPage bool) bool {
+			keys = append(keys, page.SSHPublicKeys...)
+			return true
+		})
+
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		_, err := e.svc.DeleteSSHPublicKey(&iam.DeleteSSHPublicKeyInput{
+			UserName:       key.UserName,
+			SSHPublicKeyId: key.SSHPublicKeyId,
+		})
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
